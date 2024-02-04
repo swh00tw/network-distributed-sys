@@ -46,6 +46,7 @@ typedef struct {
 typedef struct state_t{
 
 	/* TODO: Your state information could be encoded here. */
+	int state;
 
 } state_t;
 
@@ -70,6 +71,8 @@ int gbn_close(int sockfd);
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags);
 ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags);
 
+ssize_t maybe_sendto(int s, const void *buf, size_t len, int flags, 
+                     const struct sockaddr *to, socklen_t tolen);
 ssize_t  maybe_recvfrom(int  s, char *buf, size_t len, int flags, \
             struct sockaddr *from, socklen_t *fromlen);
 

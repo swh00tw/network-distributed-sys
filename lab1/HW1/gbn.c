@@ -1,5 +1,7 @@
 #include "gbn.h"
 
+state_t s;
+
 uint16_t checksum(uint16_t *buf, int nwords)
 {
 	uint32_t sum;
@@ -41,22 +43,58 @@ int gbn_close(int sockfd){
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
 	/* TODO: Your code here. */
+	/* prepare the SYN packet */
+	gbnhdr syn_pkt;
+	/* use memset to initialize the packet */ 
+	memset(&syn_pkt, 0, sizeof(syn_pkt));
+	syn_pkt.type = SYN;
+	int numberofwords = sizeof(syn_pkt)/2; /* convert bytes to words */ 
+	syn_pkt.checksum = checksum((uint16_t *)&syn_pkt, numberofwords); 
 
-	return(-1);
+	/* Send SYN packet */ 
+	if (maybe_sendto(sockfd, &syn_pkt, sizeof(syn_pkt), 0, server, socklen) < 0) {
+			perror("Failed to send SYN packet");
+			return -1;
+	}
+	/* Wait for SYN-ACK */ 
+	gbnhdr syn_ack_pkt;
+	if (maybe_recvfrom(sockfd, &syn_ack_pkt, sizeof(syn_ack_pkt), 0, NULL, NULL) < 0) {
+			perror("Failed to receive SYN-ACK packet");
+			return -1;
+	}
+	/* Check if the received packet is a SYN-ACK packet */
+	if (syn_ack_pkt.type != SYNACK) {
+		perror("Invalid SYN-ACK packet");
+		return -1;
+	}
+	if (checksum((uint16_t *)&syn_ack_pkt, sizeof(syn_ack_pkt)/2) != 0) {
+		perror("Invalid SYN-ACK packet checksum");
+		return -1;
+	}
+
+	/* Update state to ESTABLISHED */ 
+	s.state = ESTABLISHED;
+	return 0;
 }
 
 int gbn_listen(int sockfd, int backlog){
 
-	/* TODO: Your code here. */
+	/* DONE: Your code here. */
+	/* change state to listening for activity on a socket */
 
-	return(-1);
+	return 0;
 }
 
 int gbn_bind(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
-	/* TODO: Your code here. */
+	/* DONE: Your code here. */
+	/* bind the socket to the server address */
+	if (bind(sockfd, server, socklen)< 0){
+		perror("bind");
+		exit(-1);
+	}
 
-	return(-1);
+	return 0;
 }	
 
 int gbn_socket(int domain, int type, int protocol){
@@ -65,12 +103,13 @@ int gbn_socket(int domain, int type, int protocol){
 	srand((unsigned)time(0));
 	
 	/* DONE: Your code here. */
-	// create a socket and return the socket file descriptor
+	/* create a socket and return the socket file descriptor */ 
 	int socketfd = socket(domain, type, protocol);
 	if (socketfd < 0){
 		perror("socket");
 		exit(-1);
 	}
+	memset(&s, 0, sizeof(s));
 	return socketfd;
 }
 
