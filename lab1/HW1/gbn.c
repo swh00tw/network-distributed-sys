@@ -1,6 +1,7 @@
 #include "gbn.h"
 
 state_t s;
+int SYN_RETRIES = 5;
 
 uint16_t checksum(uint16_t *buf, int nwords)
 {
@@ -43,33 +44,33 @@ int gbn_close(int sockfd){
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
 	/* TODO: Your code here. */
-	/* prepare the SYN packet */
+	int retry = 0;
 	gbnhdr syn_pkt;
-	/* use memset to initialize the packet */ 
+	/* prepare the SYN packet */
 	memset(&syn_pkt, 0, sizeof(syn_pkt));
 	syn_pkt.type = SYN;
 	int numberofwords = sizeof(syn_pkt)/2; /* convert bytes to words */ 
 	syn_pkt.checksum = checksum((uint16_t *)&syn_pkt, numberofwords); 
 
-	/* Send SYN packet */ 
-	if (maybe_sendto(sockfd, &syn_pkt, sizeof(syn_pkt), 0, server, socklen) < 0) {
-			perror("Failed to send SYN packet");
-			return -1;
-	}
-	/* Wait for SYN-ACK */ 
-	gbnhdr syn_ack_pkt;
-	if (maybe_recvfrom(sockfd, &syn_ack_pkt, sizeof(syn_ack_pkt), 0, NULL, NULL) < 0) {
-			perror("Failed to receive SYN-ACK packet");
-			return -1;
-	}
-	/* Check if the received packet is a SYN-ACK packet */
-	if (syn_ack_pkt.type != SYNACK) {
-		perror("Invalid SYN-ACK packet");
-		return -1;
-	}
-	if (checksum((uint16_t *)&syn_ack_pkt, sizeof(syn_ack_pkt)/2) != 0) {
-		perror("Invalid SYN-ACK packet checksum");
-		return -1;
+	s.state = SYN_SENT;
+	while (retry < SYN_RETRIES){
+		/* Send SYN packet */ 
+		if (maybe_sendto(sockfd, &syn_pkt, sizeof(syn_pkt), 0, server, socklen) < 0) {
+				perror("Failed to send SYN packet");
+				return -1;
+		}
+		/* Wait for SYN-ACK */ 
+		gbnhdr syn_ack_pkt;
+		if (maybe_recvfrom(sockfd, &syn_ack_pkt, sizeof(syn_ack_pkt), 0, NULL, NULL) < 0) {
+				perror("Failed to receive SYN-ACK packet");
+				return -1;
+		}
+		/* Check if the received packet is a SYN-ACK packet */
+		if (syn_ack_pkt.type != SYNACK || checksum((uint16_t *)&syn_ack_pkt, sizeof(syn_ack_pkt)/2) != 0) {
+			retry++;
+		} else {
+			break;
+		}
 	}
 
 	/* Update state to ESTABLISHED */ 
@@ -116,8 +117,37 @@ int gbn_socket(int domain, int type, int protocol){
 int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 
 	/* TODO: Your code here. */
+	gbnhdr recv_packet, syn_ack_packet;
+	int recv_len;
+	int retry = 0;
+	
+	/* wait for SYN */
+	while (retry < SYN_RETRIES) {
+		recv_len = maybe_recvfrom(sockfd, &recv_packet, sizeof(recv_packet), 0, client, socklen);
+		/* check checksum */
+		if (recv_packet.type != SYN || checksum((uint16_t *)&recv_packet, sizeof(recv_packet)/2) != 0) {
+			retry ++;			
+		} else {
+			break;
+		}
+	}
+	if (retry == 5) {
+		perror("Failed to receive SYN packet");
+		return -1;
+	}
 
-	return(-1);
+	/* Send SYN-ACK */
+	memset(&syn_ack_packet, 0, sizeof(syn_ack_packet));
+	syn_ack_packet.type = SYNACK;
+	int numberofwords = sizeof(syn_ack_packet)/2; /* convert bytes to words */
+	syn_ack_packet.checksum = checksum((uint16_t *)&syn_ack_packet, numberofwords);
+	if (maybe_sendto(sockfd, &syn_ack_packet, sizeof(syn_ack_packet), 0, client, *socklen) < 0) {
+			perror("Sending SYN-ACK failed");
+			return -1;
+	}
+
+	s.state = SYN_RCVD;
+	return 0; 
 }
 
 ssize_t maybe_recvfrom(int  s, char *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen){
