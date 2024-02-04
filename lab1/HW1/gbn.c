@@ -43,7 +43,7 @@ int gbn_close(int sockfd){
 
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
-	/* TODO: Your code here. */
+	/* DONE: Your code here. */
 	int retry = 0;
 	gbnhdr syn_pkt;
 	/* prepare the SYN packet */
@@ -82,6 +82,7 @@ int gbn_listen(int sockfd, int backlog){
 
 	/* DONE: Your code here. */
 	/* change state to listening for activity on a socket */
+	s.state = LISTENING;
 
 	return 0;
 }
@@ -116,7 +117,7 @@ int gbn_socket(int domain, int type, int protocol){
 
 int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 
-	/* TODO: Your code here. */
+	/* DONE: Your code here. */
 	gbnhdr recv_packet, syn_ack_packet;
 	int recv_len;
 	int retry = 0;
