@@ -64,9 +64,14 @@ int gbn_socket(int domain, int type, int protocol){
 	/*----- Randomizing the seed. This is used by the rand() function -----*/
 	srand((unsigned)time(0));
 	
-	/* TODO: Your code here. */
-
-	return(-1);
+	/* DONE: Your code here. */
+	// create a socket and return the socket file descriptor
+	int socketfd = socket(domain, type, protocol);
+	if (socketfd < 0){
+		perror("socket");
+		exit(-1);
+	}
+	return socketfd;
 }
 
 int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
