@@ -6,7 +6,11 @@ socklen_t recv_addrlen;
 struct sockaddr *send_addr;
 socklen_t send_addrlen;
 
-int seq_num = 0;
+/* sender global variables */
+uint8_t base = 0;
+uint8_t nextseqnum = 0;
+/* receiver global variables */
+uint8_t expectedseqnum = 0;
 
 gbnhdr* make_pkt(uint8_t type, uint8_t seqnum, const void *buf, size_t datalen) {
 	gbnhdr *pkt = malloc(sizeof(gbnhdr));
@@ -27,6 +31,13 @@ int is_corrupted(gbnhdr *pkt) {
 		return 1;
 	}
 	return 0;
+}
+
+int check_seq_num(uint8_t expected_seqnum, gbnhdr *pkt) {
+	if (pkt->seqnum != expected_seqnum) {
+		return 0;
+	}
+	return 1;
 }
 
 uint16_t checksum(uint16_t *buf, int nwords)
@@ -55,7 +66,8 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	 */
 	size_t chunk_size = len > DATALEN ? DATALEN : len;
 	while (len > 0){
-		gbnhdr *data = make_pkt(DATA, seq_num, buf, chunk_size);
+		gbnhdr *data = make_pkt(DATA, base, buf, chunk_size);
+		printf("data seqnum: %d\n", data->seqnum);
 		ssize_t bytes_sent = sendto(sockfd, data, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
 		if (bytes_sent == -1){
 			perror("sendto failed");
@@ -73,7 +85,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 			return -1;
 		}
 
-		if (ack->type != DATAACK || is_corrupted(ack)){
+		if (ack->type != DATAACK || is_corrupted(ack) || !check_seq_num(base, ack)){
 			perror("DATAACK packet corrupted\n");
 			free(data);
 			return -1;
@@ -85,10 +97,11 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 		len -= chunk_size;
 		buf += chunk_size;
 		chunk_size = len > DATALEN ? DATALEN : len;
+		base++;
 	}
 
 	/* send FIN after finish */
-	gbnhdr *fin = make_pkt(FIN, seq_num, NULL, 0);
+	gbnhdr *fin = make_pkt(FIN, base, NULL, 0);
 	ssize_t bytes_sent = sendto(sockfd, fin, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
 	if (bytes_sent == -1){
 		perror("sendto failed");
@@ -112,7 +125,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 		return -1;
 	}
 
-	if (is_corrupted(data)) {
+	if (is_corrupted(data) || !check_seq_num(expectedseqnum, data)) {
 		perror("DATA packet corrupted\n");
 		free(data);
 		return -1;
@@ -139,6 +152,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 	}
 	/* write data to buf */
 	memcpy(buf, data->data, len);
+	expectedseqnum++;
 
 	free(data);
 	free(ack);
@@ -183,7 +197,7 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 	recv_addr = (struct sockaddr *) server;
 	recv_addrlen = socklen;
 	s.state = ESTABLISHED;
-	seq_num = 0;
+	base = 0;
 
 	
 	return 0;
@@ -243,6 +257,7 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 	/* Set Sender address */
 	send_addr = client;
 	send_addrlen = *socklen;
+	expectedseqnum = 0;
 
 	return sockfd;
 }
