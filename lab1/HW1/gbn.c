@@ -134,7 +134,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 	memset(data, 0, sizeof(gbnhdr));
 
 	ssize_t bytes_recv = recvfrom(sockfd, data, sizeof(gbnhdr), 0, NULL, NULL);
-	if (bytes_recv == -1 || is_corrupted(data) || !check_seq_num(expectedseqnum, data)) {
+	if (bytes_recv == -1 || is_corrupted(data)) {
 		perror("DATA packet corrupted\n");
 		free(data);
 		return -1;
@@ -150,9 +150,17 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 		return -1;
 	}
 
+	uint8_t ack_seqnum = data->seqnum;
+	int should_deliver = 1;
+	if (!check_seq_num(expectedseqnum, data)) {
+		/* send duplicated ack */
+		ack_seqnum = expectedseqnum - 1;
+		should_deliver = 0;
+	}
+
 	printf("recv data seqnum: %d\n", data->seqnum);
 
-	gbnhdr *ack = make_pkt(DATAACK, data->seqnum, NULL, 0);
+	gbnhdr *ack = make_pkt(DATAACK, ack_seqnum, NULL, 0);
 	ssize_t bytes_sent = sendto(sockfd, ack, sizeof(gbnhdr), flags, send_addr, send_addrlen);
 	if (bytes_sent == -1){
 		perror("sendto failed");
@@ -160,9 +168,13 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 		free(ack);
 		return -1;
 	}
-	/* write data to buf */
-	memcpy(buf, data->data, len);
-	expectedseqnum++;
+
+	if (should_deliver) {
+		/* write data to buf */
+		memcpy(buf, data->data, len);
+		expectedseqnum++;
+	}
+	
 
 	free(data);
 	free(ack);
