@@ -53,13 +53,13 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
 	s.state = SYN_SENT;
 	/* Send SYN packet */ 
-	if (maybe_sendto(sockfd, &syn_pkt, sizeof(syn_pkt), 0, server, socklen) < 0) {
+	if (sendto(sockfd, &syn_pkt, sizeof(syn_pkt), 0, server, socklen) < 0) {
 			perror("Failed to send SYN packet");
 			return -1;
 	}
 	/* Wait for SYN-ACK */ 
 	gbnhdr syn_ack_pkt;
-	if (maybe_recvfrom(sockfd, &syn_ack_pkt, sizeof(syn_ack_pkt), 0, NULL, NULL) < 0) {
+	if (recvfrom(sockfd, &syn_ack_pkt, sizeof(syn_ack_pkt), 0, NULL, NULL) < 0) {
 			perror("Failed to receive SYN-ACK packet");
 			return -1;
 	}
@@ -121,7 +121,7 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 	int retry = 0;
 	
 	/* wait for SYN */
-	recv_len = maybe_recvfrom(sockfd, &recv_packet, sizeof(recv_packet), 0, client, socklen);
+	recv_len = recvfrom(sockfd, &recv_packet, sizeof(recv_packet), 0, client, socklen);
 	/* check checksum */
 	uint16_t recv_checksum = recv_packet.checksum;
 	recv_packet.checksum = 0;
@@ -135,7 +135,7 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 	syn_ack_packet.type = SYNACK;
 	int numberofwords = sizeof(syn_ack_packet)/2; /* convert bytes to words */
 	syn_ack_packet.checksum = checksum((uint16_t *)&syn_ack_packet, numberofwords);
-	if (maybe_sendto(sockfd, &syn_ack_packet, sizeof(syn_ack_packet), 0, client, *socklen) < 0) {
+	if (sendto(sockfd, &syn_ack_packet, sizeof(syn_ack_packet), 0, client, *socklen) < 0) {
 			perror("Sending SYN-ACK failed");
 			return -1;
 	}
