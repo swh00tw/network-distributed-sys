@@ -1,6 +1,10 @@
 #include "gbn.h"
 
-state_t s;
+state_t s = {CLOSED};
+struct sockaddr *recv_addr;
+socklen_t recv_addrlen;
+struct sockaddr *send_addr;
+socklen_t send_addrlen;
 
 uint16_t checksum(uint16_t *buf, int nwords)
 {
@@ -13,6 +17,10 @@ uint16_t checksum(uint16_t *buf, int nwords)
 	return ~sum;
 }
 
+/* TODO
+ 1. seq num
+ 2. solve the NULL problem
+ 3. go back N */
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	
 	/* TODO: Your code here. */
@@ -22,79 +30,175 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	 *       up into multiple packets - you don't have to worry
 	 *       about getting more than N * DATALEN.
 	 */
+	size_t chunk_size = len > DATALEN ? DATALEN : len;
+	while (len > 0){
+		gbnhdr *data = malloc(sizeof(gbnhdr));
+		memset(data, 0, sizeof(gbnhdr));
 
-	return(-1);
+		data->type = DATA;
+		data->seqnum = 123;
+		memcpy(data->data, buf, chunk_size);
+		data->checksum = checksum((uint16_t *)data, sizeof(gbnhdr)/2);
+		ssize_t bytes_sent = sendto(sockfd, data, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
+		if (bytes_sent == -1){
+			perror("sendto failed");
+			return -1;
+		}
+		
+		gbnhdr *ack = malloc(sizeof(gbnhdr));
+		memset(ack, 0, sizeof(gbnhdr));
+		ssize_t bytes_recv = recvfrom(sockfd, ack, sizeof(gbnhdr), 0, NULL, NULL);
+		if (bytes_recv == -1){
+			perror("recvfrom failed");
+			return -1;
+		}
+
+		uint16_t checksum_recv = ack->checksum;
+		ack->checksum = 0;
+		if (ack->type != DATAACK || checksum_recv != checksum((uint16_t *)ack, sizeof(gbnhdr)/2)){
+			perror("DATAACK packet corrupted\n");
+			return -1;
+		}
+
+		free(data);
+		free(ack);
+
+		len -= chunk_size;
+		buf += chunk_size;
+		chunk_size = len > DATALEN ? DATALEN : len;
+	}
+
+	/* send FIN */
+	gbnhdr *fin = malloc(sizeof(gbnhdr));
+	memset(fin, 0, sizeof(gbnhdr));
+	fin->type = FIN;
+	fin->seqnum = 5;
+	fin->checksum = checksum((uint16_t *)fin, sizeof(gbnhdr)/2);
+	ssize_t bytes_sent = sendto(sockfd, fin, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
+	if (bytes_sent == -1){
+		perror("sendto failed");
+		return -1;
+	}
+	printf("Send FIN bytes_sent: %d\n", (int) bytes_sent);
+
+	return len;
 }
 
 ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
 	/* TODO: Your code here. */
+	gbnhdr *data = malloc(sizeof(gbnhdr));
+	memset(data, 0, sizeof(gbnhdr));
 
-	return(-1);
+	ssize_t bytes_recv = recvfrom(sockfd, data, sizeof(gbnhdr), 0, NULL, NULL);
+	if (bytes_recv == -1){
+		perror("recvfrom failed");
+		return -1;
+	}
+
+	uint16_t checksum_recv = data->checksum;
+	data->checksum = 0;
+	if (checksum_recv != checksum((uint16_t *)data, sizeof(gbnhdr)/2)) {
+		perror("DATA packet corrupted\n");
+		return -1;
+	}
+
+	if (data->type == FIN) {
+		free(data);
+		return 0;
+	}
+
+	if (data->type != DATA) {
+		perror("DATA packet corrupted\n");
+		return -1;
+	}
+
+	gbnhdr *ack = malloc(sizeof(gbnhdr));
+	memset(ack, 0, sizeof(gbnhdr));
+	ack->type = DATAACK;
+	ack->seqnum = 5;
+	ack->checksum = checksum((uint16_t *)ack, sizeof(gbnhdr)/2);
+	ssize_t bytes_sent = sendto(sockfd, ack, sizeof(gbnhdr), flags, send_addr, send_addrlen);
+	if (bytes_sent == -1){
+		perror("sendto failed");
+		return -1;
+	}
+	/* write data to buf */
+	memcpy(buf, data->data, len);
+	printf("Receive DATA bytes_recv: %d\n", (int) bytes_recv);
+	/* print buf */
+	printf("buf: %s\n", (char *)buf);
+
+	free(data);
+	free(ack);
+
+	return len;
 }
 
 int gbn_close(int sockfd){
 
 	/* TODO: Your code here. */
-
-	return(-1);
+	return close(sockfd);;
 }
 
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
-	/* DONE: Your code here. */
-	int retry = 0;
-	gbnhdr syn_pkt;
-	/* prepare the SYN packet */
-	memset(&syn_pkt, 0, sizeof(syn_pkt));
-	syn_pkt.type = SYN;
-	int numberofwords = sizeof(syn_pkt)/2; /* convert bytes to words */ 
-	syn_pkt.checksum = checksum((uint16_t *)&syn_pkt, numberofwords); 
-
+	/* TODO: Your code here. */
+	/* Send SYN */
+	gbnhdr *syn = malloc(sizeof(gbnhdr));
+	memset(syn, 0, sizeof(gbnhdr));
+	
+	/* Construct SYN packet */
+	syn->type = SYN;
+	syn->seqnum = 0;
+	syn->checksum = checksum((uint16_t *)syn, sizeof(gbnhdr)/2);
+	
+	/* Send SYN packet */
+	ssize_t bytes_sent = sendto(sockfd, syn, sizeof(gbnhdr), 0, server, socklen);
 	s.state = SYN_SENT;
-	/* Send SYN packet */ 
-	if (sendto(sockfd, &syn_pkt, sizeof(syn_pkt), 0, server, socklen) < 0) {
-			perror("Failed to send SYN packet");
-			return -1;
-	}
-	/* Wait for SYN-ACK */ 
-	gbnhdr syn_ack_pkt;
-	if (recvfrom(sockfd, &syn_ack_pkt, sizeof(syn_ack_pkt), 0, NULL, NULL) < 0) {
-			perror("Failed to receive SYN-ACK packet");
-			return -1;
-	}
-	/* Check if the received packet is a SYN-ACK packet */
-	uint16_t recv_checksum = syn_ack_pkt.checksum;
-	syn_ack_pkt.checksum = 0;
-	if (syn_ack_pkt.type != SYNACK || checksum((uint16_t *)&syn_ack_pkt, sizeof(syn_ack_pkt)/2) != recv_checksum) {
-		perror("SYNAK packet corrupted");
+	
+	/* Free memory */
+	free(syn);
+
+	/* Receive SYNACK */
+	/* Allocate memory */
+	gbnhdr *synack = malloc(sizeof(gbnhdr));
+	memset(synack, 0, sizeof(gbnhdr));
+
+	/* Receive SYNACK packet */
+	ssize_t bytes_recv = recvfrom(sockfd, synack, sizeof(gbnhdr), 0, NULL, NULL);
+	
+	/* Check if SYNACK packet is corrupted */
+	uint16_t checksum_recv = synack->checksum;
+	synack->checksum = 0;
+	if (synack->type != SYNACK || synack->seqnum != 0 || checksum_recv != checksum((uint16_t *)synack, sizeof(gbnhdr)/2)){
+		free(synack);
+		perror("SYNACK packet corrupted\n");
 		return -1;
 	}
 
-	/* Update state to ESTABLISHED */ 
+	/* Free memory */
+	free(synack);
+
+	/* Set Receiver address */
+	recv_addr = (struct sockaddr *) server;
+	recv_addrlen = socklen;
 	s.state = ESTABLISHED;
+
+	
 	return 0;
 }
 
 int gbn_listen(int sockfd, int backlog){
 
-	/* DONE: Your code here. */
-	/* change state to listening for activity on a socket */
-	s.state = LISTENING;
-
+	/* TODO: Your code here. */
 	return 0;
 }
 
 int gbn_bind(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
-	/* DONE: Your code here. */
-	/* bind the socket to the server address */
-	if (bind(sockfd, server, socklen)< 0){
-		perror("bind");
-		exit(-1);
-	}
-
-	return 0;
+	/* TODO: Your code here. */
+	return bind(sockfd, server, socklen);
 }	
 
 int gbn_socket(int domain, int type, int protocol){
@@ -102,46 +206,56 @@ int gbn_socket(int domain, int type, int protocol){
 	/*----- Randomizing the seed. This is used by the rand() function -----*/
 	srand((unsigned)time(0));
 	
-	/* DONE: Your code here. */
-	/* create a socket and return the socket file descriptor */ 
-	int socketfd = socket(domain, type, protocol);
-	if (socketfd < 0){
-		perror("socket");
-		exit(-1);
-	}
-	memset(&s, 0, sizeof(s));
-	return socketfd;
+	/* TODO: Your code here. */
+	return socket(domain, type, protocol);
 }
 
 int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 
-	/* DONE: Your code here. */
-	gbnhdr recv_packet, syn_ack_packet;
-	int recv_len;
-	int retry = 0;
+	/* TODO: Your code here. */
+	/* Receive SYN */
+	/* Allocate memory */
+	gbnhdr *syn = malloc(sizeof(gbnhdr));
+	memset(syn, 0, sizeof(gbnhdr));
+
+	/* Receive SYN packet */
+	ssize_t bytes_recv = recvfrom(sockfd, syn, sizeof(gbnhdr), 0, client, socklen);
 	
-	/* wait for SYN */
-	recv_len = recvfrom(sockfd, &recv_packet, sizeof(recv_packet), 0, client, socklen);
-	/* check checksum */
-	uint16_t recv_checksum = recv_packet.checksum;
-	recv_packet.checksum = 0;
-	if (recv_packet.type != SYN || checksum((uint16_t *)&recv_packet, sizeof(recv_packet)/2) != recv_checksum) {
-		perror("SYN packet corrupted");
-		return -1;	
+	/* Check if SYN packet is corrupted */
+	uint16_t checksum_recv = syn->checksum;
+	syn->checksum = 0;
+	if (syn->type != SYN || syn->seqnum != 0 || checksum_recv != checksum((uint16_t *)syn, sizeof(gbnhdr)/2)){
+		free(syn);
+		perror("SYN packet corrupted\n");
+		return -1;
 	}
-
-	/* Send SYN-ACK */
-	memset(&syn_ack_packet, 0, sizeof(syn_ack_packet));
-	syn_ack_packet.type = SYNACK;
-	int numberofwords = sizeof(syn_ack_packet)/2; /* convert bytes to words */
-	syn_ack_packet.checksum = checksum((uint16_t *)&syn_ack_packet, numberofwords);
-	if (sendto(sockfd, &syn_ack_packet, sizeof(syn_ack_packet), 0, client, *socklen) < 0) {
-			perror("Sending SYN-ACK failed");
-			return -1;
-	}
-
 	s.state = SYN_RCVD;
-	return 0; 
+
+	/* Free memory */
+	free(syn);
+	
+
+	/* Send SYNACK */
+	/* Allocate memory */
+	gbnhdr *synack = malloc(sizeof(gbnhdr));
+	memset(synack, 0, sizeof(gbnhdr));
+
+	/* Construct SYNACK packet */
+	synack->type = SYNACK;
+	synack->seqnum = 0;
+	synack->checksum = checksum((uint16_t *)synack, sizeof(gbnhdr)/2);
+	
+	/* Send SYNACK packet */
+	ssize_t bytes_sent = sendto(sockfd, synack, sizeof(gbnhdr), 0, client, *socklen);
+	
+	/* Free memory */
+	free(synack);
+
+	/* Set Sender address */
+	send_addr = client;
+	send_addrlen = *socklen;
+
+	return sockfd;
 }
 
 ssize_t maybe_recvfrom(int  s, char *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen){
