@@ -6,6 +6,29 @@ socklen_t recv_addrlen;
 struct sockaddr *send_addr;
 socklen_t send_addrlen;
 
+int seq_num = 0;
+
+gbnhdr* make_pkt(uint8_t type, uint8_t seqnum, const void *buf, size_t datalen) {
+	gbnhdr *pkt = malloc(sizeof(gbnhdr));
+	memset(pkt, 0, sizeof(gbnhdr));
+	pkt->type = type;
+	pkt->seqnum = seqnum;
+	if (type == DATA) {
+		memcpy(pkt->data, buf, datalen);
+	}
+	pkt->checksum = checksum((uint16_t *)pkt, sizeof(gbnhdr)/2);
+	return pkt;
+}
+
+int is_corrupted(gbnhdr *pkt) {
+	uint16_t checksum_recv = pkt->checksum;
+	pkt->checksum = 0;
+	if (checksum_recv != checksum((uint16_t *)pkt, sizeof(gbnhdr)/2)) {
+		return 1;
+	}
+	return 0;
+}
+
 uint16_t checksum(uint16_t *buf, int nwords)
 {
 	uint32_t sum;
@@ -32,31 +55,27 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	 */
 	size_t chunk_size = len > DATALEN ? DATALEN : len;
 	while (len > 0){
-		gbnhdr *data = malloc(sizeof(gbnhdr));
-		memset(data, 0, sizeof(gbnhdr));
-
-		data->type = DATA;
-		data->seqnum = 123;
-		memcpy(data->data, buf, chunk_size);
-		data->checksum = checksum((uint16_t *)data, sizeof(gbnhdr)/2);
+		gbnhdr *data = make_pkt(DATA, seq_num, buf, chunk_size);
 		ssize_t bytes_sent = sendto(sockfd, data, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
 		if (bytes_sent == -1){
 			perror("sendto failed");
+			free(data);
 			return -1;
 		}
 		
+		/* receive ack */
 		gbnhdr *ack = malloc(sizeof(gbnhdr));
 		memset(ack, 0, sizeof(gbnhdr));
 		ssize_t bytes_recv = recvfrom(sockfd, ack, sizeof(gbnhdr), 0, NULL, NULL);
 		if (bytes_recv == -1){
 			perror("recvfrom failed");
+			free(data);
 			return -1;
 		}
 
-		uint16_t checksum_recv = ack->checksum;
-		ack->checksum = 0;
-		if (ack->type != DATAACK || checksum_recv != checksum((uint16_t *)ack, sizeof(gbnhdr)/2)){
+		if (ack->type != DATAACK || is_corrupted(ack)){
 			perror("DATAACK packet corrupted\n");
+			free(data);
 			return -1;
 		}
 
@@ -68,18 +87,14 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 		chunk_size = len > DATALEN ? DATALEN : len;
 	}
 
-	/* send FIN */
-	gbnhdr *fin = malloc(sizeof(gbnhdr));
-	memset(fin, 0, sizeof(gbnhdr));
-	fin->type = FIN;
-	fin->seqnum = 5;
-	fin->checksum = checksum((uint16_t *)fin, sizeof(gbnhdr)/2);
+	/* send FIN after finish */
+	gbnhdr *fin = make_pkt(FIN, seq_num, NULL, 0);
 	ssize_t bytes_sent = sendto(sockfd, fin, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
 	if (bytes_sent == -1){
 		perror("sendto failed");
+		free(fin);
 		return -1;
 	}
-	printf("Send FIN bytes_sent: %d\n", (int) bytes_sent);
 
 	return len;
 }
@@ -93,13 +108,13 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 	ssize_t bytes_recv = recvfrom(sockfd, data, sizeof(gbnhdr), 0, NULL, NULL);
 	if (bytes_recv == -1){
 		perror("recvfrom failed");
+		free(data);
 		return -1;
 	}
 
-	uint16_t checksum_recv = data->checksum;
-	data->checksum = 0;
-	if (checksum_recv != checksum((uint16_t *)data, sizeof(gbnhdr)/2)) {
+	if (is_corrupted(data)) {
 		perror("DATA packet corrupted\n");
+		free(data);
 		return -1;
 	}
 
@@ -110,24 +125,20 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
 	if (data->type != DATA) {
 		perror("DATA packet corrupted\n");
+		free(data);
 		return -1;
 	}
 
-	gbnhdr *ack = malloc(sizeof(gbnhdr));
-	memset(ack, 0, sizeof(gbnhdr));
-	ack->type = DATAACK;
-	ack->seqnum = 5;
-	ack->checksum = checksum((uint16_t *)ack, sizeof(gbnhdr)/2);
+	gbnhdr *ack = make_pkt(DATAACK, data->seqnum, NULL, 0);
 	ssize_t bytes_sent = sendto(sockfd, ack, sizeof(gbnhdr), flags, send_addr, send_addrlen);
 	if (bytes_sent == -1){
 		perror("sendto failed");
+		free(data);
+		free(ack);
 		return -1;
 	}
 	/* write data to buf */
 	memcpy(buf, data->data, len);
-	printf("Receive DATA bytes_recv: %d\n", (int) bytes_recv);
-	/* print buf */
-	printf("buf: %s\n", (char *)buf);
 
 	free(data);
 	free(ack);
@@ -144,24 +155,12 @@ int gbn_close(int sockfd){
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 
 	/* TODO: Your code here. */
-	/* Send SYN */
-	gbnhdr *syn = malloc(sizeof(gbnhdr));
-	memset(syn, 0, sizeof(gbnhdr));
+	gbnhdr *syn = make_pkt(SYN, 0, NULL, 0);
 	
-	/* Construct SYN packet */
-	syn->type = SYN;
-	syn->seqnum = 0;
-	syn->checksum = checksum((uint16_t *)syn, sizeof(gbnhdr)/2);
-	
-	/* Send SYN packet */
 	ssize_t bytes_sent = sendto(sockfd, syn, sizeof(gbnhdr), 0, server, socklen);
 	s.state = SYN_SENT;
 	
-	/* Free memory */
-	free(syn);
-
 	/* Receive SYNACK */
-	/* Allocate memory */
 	gbnhdr *synack = malloc(sizeof(gbnhdr));
 	memset(synack, 0, sizeof(gbnhdr));
 
@@ -169,21 +168,22 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 	ssize_t bytes_recv = recvfrom(sockfd, synack, sizeof(gbnhdr), 0, NULL, NULL);
 	
 	/* Check if SYNACK packet is corrupted */
-	uint16_t checksum_recv = synack->checksum;
-	synack->checksum = 0;
-	if (synack->type != SYNACK || synack->seqnum != 0 || checksum_recv != checksum((uint16_t *)synack, sizeof(gbnhdr)/2)){
+	if (synack->type != SYNACK || is_corrupted(synack)){
+		free(syn);
 		free(synack);
 		perror("SYNACK packet corrupted\n");
 		return -1;
 	}
 
 	/* Free memory */
+	free(syn);
 	free(synack);
 
 	/* Set Receiver address */
 	recv_addr = (struct sockaddr *) server;
 	recv_addrlen = socklen;
 	s.state = ESTABLISHED;
+	seq_num = 0;
 
 	
 	return 0;
@@ -222,9 +222,7 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 	ssize_t bytes_recv = recvfrom(sockfd, syn, sizeof(gbnhdr), 0, client, socklen);
 	
 	/* Check if SYN packet is corrupted */
-	uint16_t checksum_recv = syn->checksum;
-	syn->checksum = 0;
-	if (syn->type != SYN || syn->seqnum != 0 || checksum_recv != checksum((uint16_t *)syn, sizeof(gbnhdr)/2)){
+	if (syn->type != SYN || is_corrupted(syn)){
 		free(syn);
 		perror("SYN packet corrupted\n");
 		return -1;
@@ -236,16 +234,7 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 	
 
 	/* Send SYNACK */
-	/* Allocate memory */
-	gbnhdr *synack = malloc(sizeof(gbnhdr));
-	memset(synack, 0, sizeof(gbnhdr));
-
-	/* Construct SYNACK packet */
-	synack->type = SYNACK;
-	synack->seqnum = 0;
-	synack->checksum = checksum((uint16_t *)synack, sizeof(gbnhdr)/2);
-	
-	/* Send SYNACK packet */
+	gbnhdr *synack = make_pkt(SYNACK, 0, NULL, 0);	
 	ssize_t bytes_sent = sendto(sockfd, synack, sizeof(gbnhdr), 0, client, *socklen);
 	
 	/* Free memory */
