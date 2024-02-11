@@ -54,7 +54,7 @@ uint16_t checksum(uint16_t *buf, int nwords)
 }
 
 /* TODO
- 1. go back N
+ 1. go back N handle error
  2. congestion control
  3. solve the NULL problem
 */
@@ -114,41 +114,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 			break;
 		}
 	}
-
-	/* size_t chunk_size = len > DATALEN ? DATALEN : len; */
-	/* while (len > 0){
-		gbnhdr *data = make_pkt(DATA, base, buf, chunk_size);
-		printf("data seqnum: %d\n", data->seqnum);
-		ssize_t bytes_sent = sendto(sockfd, data, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
-		if (bytes_sent == -1){
-			perror("sendto failed");
-			free(data);
-			return -1;
-		}
-		
-		gbnhdr *ack = malloc(sizeof(gbnhdr));
-		memset(ack, 0, sizeof(gbnhdr));
-		ssize_t bytes_recv = recvfrom(sockfd, ack, sizeof(gbnhdr), 0, NULL, NULL);
-		if (bytes_recv == -1){
-			perror("recvfrom failed");
-			free(data);
-			return -1;
-		}
-
-		if (ack->type != DATAACK || is_corrupted(ack) || !check_seq_num(base, ack)){
-			perror("DATAACK packet corrupted\n");
-			free(data);
-			return -1;
-		}
-
-		free(data);
-		free(ack);
-
-		len -= chunk_size;
-		buf += chunk_size;
-		chunk_size = len > DATALEN ? DATALEN : len;
-		base++;
-	} */
 
 	/* send FIN after finish */
 	gbnhdr *fin = make_pkt(FIN, base, NULL, 0);
