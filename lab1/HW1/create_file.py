@@ -6,7 +6,7 @@ def create_file(n):
         for i in range(n):
             line = ''
             for _ in range(0, 128):
-                line += f'packet-{i:02d}'
+                line += f'packet{i:02d}'
 
             # erase last character
             line = line[:-1]

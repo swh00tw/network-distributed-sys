@@ -67,8 +67,56 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	 *       up into multiple packets - you don't have to worry
 	 *       about getting more than N * DATALEN.
 	 */
-	size_t chunk_size = len > DATALEN ? DATALEN : len;
-	while (len > 0){
+
+	/* calculate how many packets to be sent */
+	printf("Initialize sending...\n");
+	size_t packets_num = len / DATALEN;
+	if (len % DATALEN != 0){
+		packets_num++;
+	}
+	/* store pkts */
+	gbnhdr *pkts[packets_num];
+
+	printf("Finish initialize %d packets.\nStart sending...\n", packets_num);
+	while (1) {
+		/* send packets if available */
+		int cnt = 0;
+		while (nextseqnum < base + window_size && len > 0) {
+			size_t chunk_size = len > DATALEN ? DATALEN : len;
+			pkts[nextseqnum] = make_pkt(DATA, nextseqnum, buf, chunk_size);
+			ssize_t bytes_sent = sendto(sockfd, pkts[nextseqnum], sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
+			if (bytes_sent == -1){
+				perror("sendto failed");
+				free(pkts[nextseqnum]);
+				return -1;
+			}
+			printf("send data seqnum: %d\n", pkts[nextseqnum]->seqnum);
+			nextseqnum++;
+			cnt++;
+			len -= chunk_size;
+			buf += chunk_size;
+		}
+		printf("Finish sending %d packets.\n", cnt);
+		/* receive ack */
+		gbnhdr *ack = malloc(sizeof(gbnhdr));
+		memset(ack, 0, sizeof(gbnhdr));
+		ssize_t bytes_recv = recvfrom(sockfd, ack, sizeof(gbnhdr), 0, NULL, NULL);
+
+		if (bytes_recv == -1 || ack->type != DATAACK || is_corrupted(ack) || !check_seq_num(base, ack)){
+			perror("DATAACK packet corrupted\n");
+		} else {
+			free(pkts[ack->seqnum]);
+			base++;
+		}
+
+		free(ack);
+		if (base == packets_num) {
+			break;
+		}
+	}
+
+	/* size_t chunk_size = len > DATALEN ? DATALEN : len; */
+	/* while (len > 0){
 		gbnhdr *data = make_pkt(DATA, base, buf, chunk_size);
 		printf("data seqnum: %d\n", data->seqnum);
 		ssize_t bytes_sent = sendto(sockfd, data, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
@@ -78,7 +126,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 			return -1;
 		}
 		
-		/* receive ack */
 		gbnhdr *ack = malloc(sizeof(gbnhdr));
 		memset(ack, 0, sizeof(gbnhdr));
 		ssize_t bytes_recv = recvfrom(sockfd, ack, sizeof(gbnhdr), 0, NULL, NULL);
@@ -101,7 +148,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 		buf += chunk_size;
 		chunk_size = len > DATALEN ? DATALEN : len;
 		base++;
-	}
+	} */
 
 	/* send FIN after finish */
 	gbnhdr *fin = make_pkt(FIN, base, NULL, 0);
@@ -122,13 +169,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 	memset(data, 0, sizeof(gbnhdr));
 
 	ssize_t bytes_recv = recvfrom(sockfd, data, sizeof(gbnhdr), 0, NULL, NULL);
-	if (bytes_recv == -1){
-		perror("recvfrom failed");
-		free(data);
-		return -1;
-	}
-
-	if (is_corrupted(data) || !check_seq_num(expectedseqnum, data)) {
+	if (bytes_recv == -1 || is_corrupted(data) || !check_seq_num(expectedseqnum, data)) {
 		perror("DATA packet corrupted\n");
 		free(data);
 		return -1;
@@ -138,12 +179,13 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 		free(data);
 		return 0;
 	}
-
 	if (data->type != DATA) {
 		perror("DATA packet corrupted\n");
 		free(data);
 		return -1;
 	}
+
+	printf("recv data seqnum: %d\n", data->seqnum);
 
 	gbnhdr *ack = make_pkt(DATAACK, data->seqnum, NULL, 0);
 	ssize_t bytes_sent = sendto(sockfd, ack, sizeof(gbnhdr), flags, send_addr, send_addrlen);
@@ -201,6 +243,7 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 	recv_addrlen = socklen;
 	s.state = ESTABLISHED;
 	base = 0;
+	nextseqnum = 0;
 
 	
 	return 0;
