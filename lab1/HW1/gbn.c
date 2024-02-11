@@ -1,7 +1,6 @@
 #include "gbn.h"
 
 state_t s;
-int SYN_RETRIES = 5;
 
 uint16_t checksum(uint16_t *buf, int nwords)
 {
@@ -53,24 +52,23 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 	syn_pkt.checksum = checksum((uint16_t *)&syn_pkt, numberofwords); 
 
 	s.state = SYN_SENT;
-	while (retry < SYN_RETRIES){
-		/* Send SYN packet */ 
-		if (maybe_sendto(sockfd, &syn_pkt, sizeof(syn_pkt), 0, server, socklen) < 0) {
-				perror("Failed to send SYN packet");
-				return -1;
-		}
-		/* Wait for SYN-ACK */ 
-		gbnhdr syn_ack_pkt;
-		if (maybe_recvfrom(sockfd, &syn_ack_pkt, sizeof(syn_ack_pkt), 0, NULL, NULL) < 0) {
-				perror("Failed to receive SYN-ACK packet");
-				return -1;
-		}
-		/* Check if the received packet is a SYN-ACK packet */
-		if (syn_ack_pkt.type != SYNACK || checksum((uint16_t *)&syn_ack_pkt, sizeof(syn_ack_pkt)/2) != 0) {
-			retry++;
-		} else {
-			break;
-		}
+	/* Send SYN packet */ 
+	if (maybe_sendto(sockfd, &syn_pkt, sizeof(syn_pkt), 0, server, socklen) < 0) {
+			perror("Failed to send SYN packet");
+			return -1;
+	}
+	/* Wait for SYN-ACK */ 
+	gbnhdr syn_ack_pkt;
+	if (maybe_recvfrom(sockfd, &syn_ack_pkt, sizeof(syn_ack_pkt), 0, NULL, NULL) < 0) {
+			perror("Failed to receive SYN-ACK packet");
+			return -1;
+	}
+	/* Check if the received packet is a SYN-ACK packet */
+	uint16_t recv_checksum = syn_ack_pkt.checksum;
+	syn_ack_pkt.checksum = 0;
+	if (syn_ack_pkt.type != SYNACK || checksum((uint16_t *)&syn_ack_pkt, sizeof(syn_ack_pkt)/2) != recv_checksum) {
+		perror("SYNAK packet corrupted");
+		return -1;
 	}
 
 	/* Update state to ESTABLISHED */ 
@@ -123,18 +121,13 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 	int retry = 0;
 	
 	/* wait for SYN */
-	while (retry < SYN_RETRIES) {
-		recv_len = maybe_recvfrom(sockfd, &recv_packet, sizeof(recv_packet), 0, client, socklen);
-		/* check checksum */
-		if (recv_packet.type != SYN || checksum((uint16_t *)&recv_packet, sizeof(recv_packet)/2) != 0) {
-			retry ++;			
-		} else {
-			break;
-		}
-	}
-	if (retry == 5) {
-		perror("Failed to receive SYN packet");
-		return -1;
+	recv_len = maybe_recvfrom(sockfd, &recv_packet, sizeof(recv_packet), 0, client, socklen);
+	/* check checksum */
+	uint16_t recv_checksum = recv_packet.checksum;
+	recv_packet.checksum = 0;
+	if (recv_packet.type != SYN || checksum((uint16_t *)&recv_packet, sizeof(recv_packet)/2) != recv_checksum) {
+		perror("SYN packet corrupted");
+		return -1;	
 	}
 
 	/* Send SYN-ACK */
