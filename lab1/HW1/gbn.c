@@ -1,15 +1,17 @@
 #include "gbn.h"
 
 state_t s = {CLOSED};
-struct sockaddr *recv_addr;
-socklen_t recv_addrlen;
-struct sockaddr *send_addr;
-socklen_t send_addrlen;
 
 /* sender global variables */
+struct sockaddr *recv_addr;
+socklen_t recv_addrlen;
 uint8_t base = 0;
 uint8_t nextseqnum = 0;
+uint8_t window_size = 4;
+
 /* receiver global variables */
+struct sockaddr *send_addr;
+socklen_t send_addrlen;
 uint8_t expectedseqnum = 0;
 
 gbnhdr* make_pkt(uint8_t type, uint8_t seqnum, const void *buf, size_t datalen) {
@@ -52,9 +54,10 @@ uint16_t checksum(uint16_t *buf, int nwords)
 }
 
 /* TODO
- 1. seq num
- 2. solve the NULL problem
- 3. go back N */
+ 1. go back N
+ 2. congestion control
+ 3. solve the NULL problem
+*/
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	
 	/* TODO: Your code here. */
