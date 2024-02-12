@@ -170,10 +170,15 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
 	while (1) {
 		ssize_t bytes_recv = recvfrom(sockfd, data, sizeof(gbnhdr), 0, NULL, NULL);
-		if (bytes_recv == -1 || is_corrupted(data)) {
-			perror("DATA packet corrupted\n");
+		if (bytes_recv == -1) {
+			perror("recvfrom failed");
 			free(data);
 			return -1;
+		}
+
+		if (is_corrupted(data)) {
+			perror("DATA packet corrupted\n");
+			continue;
 		}
 
 		if (data->type == FIN) {
@@ -182,8 +187,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 		}
 		if (data->type != DATA) {
 			perror("DATA packet corrupted\n");
-			free(data);
-			return -1;
+			continue;
 		}
 
 		int should_deliver = 1;
@@ -334,6 +338,7 @@ ssize_t maybe_recvfrom(int  s, char *buf, size_t len, int flags, struct sockaddr
 
 		/*----- Packet corrupted -----*/
 		if (rand() < CORR_PROB*RAND_MAX){
+			printf("Maybe Recv: Packet corrupted\n");
 			/*----- Selecting a random byte inside the packet -----*/
 			int index = (int)((len-1)*rand()/(RAND_MAX + 1.0));
 
@@ -349,6 +354,7 @@ ssize_t maybe_recvfrom(int  s, char *buf, size_t len, int flags, struct sockaddr
 		return retval;
 	}
 	/*----- Packet lost -----*/
+	printf("Maybe Recv: Packet lost\n");
 	return(len);  /* Simulate a success */
 }
 
@@ -362,8 +368,8 @@ ssize_t maybe_sendto(int  s, const void *buf, size_t len, int flags, \
     /*----- Packet not lost -----*/
     if (rand() > 0.1*RAND_MAX){
         /*----- Packet corrupted -----*/
-        if (rand() < CORR_PROB*RAND_MAX){
-            printf("Packet corrupted\n");
+        if (rand() < 0.1*RAND_MAX){
+            printf("Maybe Send: Packet corrupted\n");
             /*----- Selecting a random byte inside the packet -----*/
             int index = (int)((len-1)*rand()/(RAND_MAX + 1.0));
 
@@ -383,7 +389,7 @@ ssize_t maybe_sendto(int  s, const void *buf, size_t len, int flags, \
     }
     /*----- Packet lost -----*/
     else {
-			printf("Packet lost\n");
+			printf("Maybe Send: Packet lost\n");
       return(len);
 		}  /* Simulate a success */
 }
