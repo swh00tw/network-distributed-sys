@@ -74,7 +74,6 @@ uint16_t checksum(uint16_t *buf, int nwords)
 		- sender: change to maybe_recvfrom
 		- receiver: change to maybe_sendto
 		- receiver: change to maybe_recvfrom
- 1.1. handle duplicate write in receiver .txt
  2. congestion control
  3. solve the NULL problem
 */
@@ -169,51 +168,54 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 	gbnhdr *data = malloc(sizeof(gbnhdr));
 	memset(data, 0, sizeof(gbnhdr));
 
-	ssize_t bytes_recv = recvfrom(sockfd, data, sizeof(gbnhdr), 0, NULL, NULL);
-	if (bytes_recv == -1 || is_corrupted(data)) {
-		perror("DATA packet corrupted\n");
-		free(data);
-		return -1;
-	}
+	while (1) {
+		ssize_t bytes_recv = recvfrom(sockfd, data, sizeof(gbnhdr), 0, NULL, NULL);
+		if (bytes_recv == -1 || is_corrupted(data)) {
+			perror("DATA packet corrupted\n");
+			free(data);
+			return -1;
+		}
 
-	if (data->type == FIN) {
-		free(data);
-		return 0;
-	}
-	if (data->type != DATA) {
-		perror("DATA packet corrupted\n");
-		free(data);
-		return -1;
-	}
+		if (data->type == FIN) {
+			free(data);
+			return 0;
+		}
+		if (data->type != DATA) {
+			perror("DATA packet corrupted\n");
+			free(data);
+			return -1;
+		}
 
-	uint8_t ack_seqnum = data->seqnum;
-	int should_deliver = 1;
-	if (!check_seq_num(expectedseqnum, data)) {
-		/* send duplicated ack */
-		ack_seqnum = expectedseqnum - 1;
-		should_deliver = 0;
-	}
+		int should_deliver = 1;
+		uint8_t ack_seqnum = data->seqnum;
+		if (!check_seq_num(expectedseqnum, data)) {
+			/* send duplicated ack */
+			ack_seqnum = expectedseqnum - 1;
+			should_deliver = 0;
+		}
 
-	printf("recv data seqnum: %d\n", data->seqnum);
+		printf("recv data seqnum: %d\n", data->seqnum);
 
-	gbnhdr *ack = make_pkt(DATAACK, ack_seqnum, NULL, 0);
-	ssize_t bytes_sent = sendto(sockfd, ack, sizeof(gbnhdr), flags, send_addr, send_addrlen);
-	if (bytes_sent == -1){
-		perror("sendto failed");
-		free(data);
+		gbnhdr *ack = make_pkt(DATAACK, ack_seqnum, NULL, 0);
+		ssize_t bytes_sent = sendto(sockfd, ack, sizeof(gbnhdr), flags, send_addr, send_addrlen);
+		if (bytes_sent == -1){
+			perror("sendto failed");
+			free(data);
+			free(ack);
+			return -1;
+		}
+
+		if (should_deliver) {
+			/* write data to buf */
+			printf("data seq: %d\n", data->seqnum);
+			memcpy(buf, data->data, len);
+			expectedseqnum++;
+			break;
+		}
 		free(ack);
-		return -1;
 	}
-
-	if (should_deliver) {
-		/* write data to buf */
-		memcpy(buf, data->data, len);
-		expectedseqnum++;
-	}
-	
 
 	free(data);
-	free(ack);
 
 	return len;
 }
@@ -358,7 +360,7 @@ ssize_t maybe_sendto(int  s, const void *buf, size_t len, int flags, \
     
     
     /*----- Packet not lost -----*/
-    if (rand() > LOSS_PROB*RAND_MAX){
+    if (rand() > 0.1*RAND_MAX){
         /*----- Packet corrupted -----*/
         if (rand() < CORR_PROB*RAND_MAX){
             printf("Packet corrupted\n");
