@@ -71,7 +71,6 @@ uint16_t checksum(uint16_t *buf, int nwords)
 
 /* TODO
  1. go back N handle error
-		- sender: change to maybe_recvfrom
 		- receiver: change to maybe_sendto
 		- receiver: change to maybe_recvfrom
  2. congestion control
@@ -125,17 +124,17 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 		/* receive ack */
 		gbnhdr *ack = malloc(sizeof(gbnhdr));
 		memset(ack, 0, sizeof(gbnhdr));
-		ssize_t bytes_recv = recvfrom(sockfd, ack, sizeof(gbnhdr), 0, NULL, NULL);
+		ssize_t bytes_recv = maybe_recvfrom(sockfd, ack, sizeof(gbnhdr), 0, NULL, NULL);
 
 		if (bytes_recv == -1 || ack->type != DATAACK || is_corrupted(ack)){
 			perror("DATAACK packet corrupted\n");
 		} 
-		else if (!check_seq_num(base, ack)) {
+		else if (ack->seqnum < base) {
 			printf("duplicated ack: %d\n", ack->seqnum);
 		}
 		else {
 			free(pkts[ack->seqnum]);
-			base++;
+			base = ack->seqnum + 1;
 
 			if (base == nextseqnum) {
 				alarm(0);
@@ -211,7 +210,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
 		if (should_deliver) {
 			/* write data to buf */
-			printf("data seq: %d\n", data->seqnum);
+			printf("deliver data seq: %d\n", data->seqnum);
 			memcpy(buf, data->data, len);
 			expectedseqnum++;
 			break;
@@ -330,14 +329,14 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 ssize_t maybe_recvfrom(int  s, char *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen){
 
 	/*----- Packet not lost -----*/
-	if (rand() > LOSS_PROB*RAND_MAX){
+	if (rand() > 0.1*RAND_MAX){
 
 
 		/*----- Receiving the packet -----*/
 		int retval = recvfrom(s, buf, len, flags, from, fromlen);
 
 		/*----- Packet corrupted -----*/
-		if (rand() < CORR_PROB*RAND_MAX){
+		if (rand() < 0.1*RAND_MAX){
 			printf("Maybe Recv: Packet corrupted\n");
 			/*----- Selecting a random byte inside the packet -----*/
 			int index = (int)((len-1)*rand()/(RAND_MAX + 1.0));
