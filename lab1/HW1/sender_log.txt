@@ -1,0 +1,113 @@
+```
+Initialize sending...
+Finish initialize 11 packets.
+Start sending...
+send data seqnum: 0
+send data seqnum: 1
+send data seqnum: 2
+send data seqnum: 3
+Finish sending 4 packets.
+Finish sending 0 packets.
+Finish sending 0 packets.
+Finish sending 0 packets.
+Maybe Send: Packet lost
+resend data seqnum: 0
+Maybe Send: Packet corrupted
+resend data seqnum: 1
+resend data seqnum: 2
+resend data seqnum: 3
+Maybe Send: Packet corrupted
+resend data seqnum: 0
+resend data seqnum: 1
+resend data seqnum: 2
+resend data seqnum: 3
+Finish sending 0 packets.
+Maybe Recv: Packet lost
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+resend data seqnum: 0
+resend data seqnum: 1
+resend data seqnum: 2
+resend data seqnum: 3
+Maybe Send: Packet lost
+send data seqnum: 4
+Finish sending 1 packets.
+Maybe Recv: Packet lost
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+Maybe Recv: Packet lost
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+Maybe Recv: Packet corrupted
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+Maybe Recv: Packet lost
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+Maybe Recv: Packet lost
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+Maybe Send: Packet lost
+send data seqnum: 5
+send data seqnum: 6
+Finish sending 2 packets.
+send data seqnum: 7
+Finish sending 1 packets.
+duplicated ack: 3
+Finish sending 0 packets.
+duplicated ack: 3
+Finish sending 0 packets.
+resend data seqnum: 4
+resend data seqnum: 5
+resend data seqnum: 6
+Maybe Send: Packet lost
+resend data seqnum: 7
+Maybe Recv: Packet corrupted
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+Maybe Recv: Packet lost
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+Maybe Recv: Packet lost
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+Maybe Send: Packet corrupted
+send data seqnum: 8
+send data seqnum: 9
+Finish sending 2 packets.
+send data seqnum: 10
+Finish sending 1 packets.
+Maybe Recv: Packet corrupted
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+resend data seqnum: 7
+resend data seqnum: 8
+resend data seqnum: 9
+Maybe Send: Packet corrupted
+resend data seqnum: 10
+Maybe Recv: Packet corrupted
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+Maybe Recv: Packet corrupted
+DATAACK packet corrupted
+: Success
+Finish sending 0 packets.
+resend data seqnum: 7
+Maybe Send: Packet lost
+resend data seqnum: 8
+resend data seqnum: 9
+resend data seqnum: 10
+Finish sending 0 packets.
+Finish sending 0 packets.
+```

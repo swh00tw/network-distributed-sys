@@ -1,0 +1,75 @@
+Maybe Recv: Packet corrupted
+DATA packet corrupted
+: Success
+Maybe Recv: Packet lost
+DATA packet corrupted
+: Success
+recv data seqnum: 1
+recv data seqnum: 2
+recv data seqnum: 3
+DATA packet corrupted
+: Success
+Maybe Recv: Packet corrupted
+DATA packet corrupted
+: Success
+Maybe Recv: Packet corrupted
+DATA packet corrupted
+: Success
+DATA packet corrupted
+: Success
+recv data seqnum: 1
+Maybe Recv: Packet corrupted
+DATA packet corrupted
+: Success
+recv data seqnum: 3
+Maybe Send: Packet lost
+recv data seqnum: 0
+deliver data seq: 0
+recv data seqnum: 1
+deliver data seq: 1
+recv data seqnum: 2
+deliver data seq: 2
+recv data seqnum: 3
+deliver data seq: 3
+Maybe Recv: Packet lost
+DATA packet corrupted
+: Success
+recv data seqnum: 6
+recv data seqnum: 7
+recv data seqnum: 4
+deliver data seq: 4
+recv data seqnum: 5
+deliver data seq: 5
+recv data seqnum: 6
+deliver data seq: 6
+DATA packet corrupted
+: Success
+Maybe Recv: Packet lost
+DATA packet corrupted
+: Success
+Maybe Recv: Packet corrupted
+DATA packet corrupted
+: Success
+recv data seqnum: 10
+recv data seqnum: 7
+deliver data seq: 7
+recv data seqnum: 8
+Maybe Send: Packet corrupted
+deliver data seq: 8
+Maybe Recv: Packet lost
+DATA packet corrupted
+: Success
+Maybe Recv: Packet corrupted
+DATA packet corrupted
+: Success
+DATA packet corrupted
+: Success
+recv data seqnum: 7
+recv data seqnum: 9
+deliver data seq: 9
+recv data seqnum: 10
+deliver data seq: 10
+Maybe Recv: Packet corrupted
+DATA packet corrupted
+: Success
+^C
