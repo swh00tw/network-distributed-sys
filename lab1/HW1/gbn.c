@@ -11,7 +11,7 @@ uint16_t base = 0;
 uint16_t nextseqnum = 0;
 uint8_t cycle_num = 0;
 
-uint16_t window_size = 4;
+uint16_t window_size = 1;
 uint16_t max_window_size = 256;
 gbnhdr *pkts[N];
 int recv_sockfd;
@@ -259,6 +259,7 @@ int gbn_close(int sockfd){
 				free(fin);
 				return -1;
 			}
+			s.state = FIN_SENT;
 
 			/* set timer */
 			alarm(TIMEOUT);
@@ -270,11 +271,15 @@ int gbn_close(int sockfd){
 			if (bytes_recv == -1 || finack->type != FINACK || is_corrupted(finack)){
 				perror("FINACK packet corrupted\n");
 			} else {
+				free(finack);
+				free(fin);
+				s.state = FIN_RCVD;
 				break;
 			}
 		}
 	}
 
+	s.state = CLOSED;
 	return close(sockfd);
 }
 
