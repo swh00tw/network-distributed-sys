@@ -44,7 +44,7 @@ int check_seq_num(uint8_t expected_seqnum, gbnhdr *pkt) {
 	return 1;
 }
 
-void sigalrm_handler(int signum) {
+void sigalrm_resend_packet_handler(int signum) {
 	alarm(TIMEOUT);
 	int i;
 	for (i = base; i < nextseqnum; i++) {
@@ -56,6 +56,18 @@ void sigalrm_handler(int signum) {
 		}
 		printf("resend data seqnum: %d\n", pkts[i]->seqnum);
 	}
+}
+
+void sigalrm_resend_fin_handler(int signum) {
+	alarm(TIMEOUT);
+	gbnhdr *fin = make_pkt(FIN, base, NULL, 0);
+	ssize_t bytes_sent = sendto(recv_sockfd, fin, sizeof(gbnhdr), 0, recv_addr, recv_addrlen);
+	if (bytes_sent == -1){
+		perror("sendto failed");
+		free(fin);
+		exit(-1);
+	}
+	printf("resend FIN\n");
 }
 
 uint16_t checksum(uint16_t *buf, int nwords)
@@ -71,7 +83,6 @@ uint16_t checksum(uint16_t *buf, int nwords)
 
 /* TODO
  1. go back N handle error
-		- receiver: change to maybe_sendto
 		- receiver: change to maybe_recvfrom
  2. congestion control
  3. solve the NULL problem
@@ -87,10 +98,9 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	 */
 
 	recv_sockfd = sockfd;
-	signal(SIGALRM, sigalrm_handler);
+	signal(SIGALRM, sigalrm_resend_packet_handler);
 
 	/* calculate how many packets to be sent */
-	printf("Initialize sending...\n");
 	size_t packets_num = len / DATALEN;
 	if (len % DATALEN != 0){
 		packets_num++;
@@ -105,7 +115,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 			pkts[nextseqnum] = make_pkt(DATA, nextseqnum, buf, chunk_size);
 			ssize_t bytes_sent = maybe_sendto(sockfd, pkts[nextseqnum], sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
 			if (bytes_sent == -1){
-				perror("sendto failed");
 				free(pkts[nextseqnum]);
 				return -1;
 			}
@@ -120,7 +129,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 			len -= chunk_size;
 			buf += chunk_size;
 		}
-		printf("Finish sending %d packets.\n", cnt);
 		/* receive ack */
 		gbnhdr *ack = malloc(sizeof(gbnhdr));
 		memset(ack, 0, sizeof(gbnhdr));
@@ -133,6 +141,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 			printf("duplicated ack: %d\n", ack->seqnum);
 		}
 		else {
+			printf("recv ack seqnum: %d\n", ack->seqnum);
 			free(pkts[ack->seqnum]);
 			base = ack->seqnum + 1;
 
@@ -150,12 +159,29 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	}
 
 	/* send FIN after finish */
-	gbnhdr *fin = make_pkt(FIN, base, NULL, 0);
-	ssize_t bytes_sent = sendto(sockfd, fin, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
-	if (bytes_sent == -1){
-		perror("sendto failed");
-		free(fin);
-		return -1;
+	signal(SIGALRM, sigalrm_resend_fin_handler);
+	while (1) {
+		gbnhdr *fin = make_pkt(FIN, base, NULL, 0);
+		ssize_t bytes_sent = sendto(sockfd, fin, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
+		if (bytes_sent == -1){
+			perror("sendto failed");
+			free(fin);
+			return -1;
+		}
+
+		/* set timer */
+		alarm(TIMEOUT);
+
+		/* receive FINACK */
+		gbnhdr *finack = malloc(sizeof(gbnhdr));
+		memset(finack, 0, sizeof(gbnhdr));
+		ssize_t bytes_recv = recvfrom(sockfd, finack, sizeof(gbnhdr), 0, NULL, NULL);
+		if (bytes_recv == -1 || finack->type != FINACK || is_corrupted(finack)){
+			perror("FINACK packet corrupted\n");
+		} else {
+			printf("recv FINACK\n");
+			break;
+		}
 	}
 
 	return len;
@@ -168,7 +194,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 	memset(data, 0, sizeof(gbnhdr));
 
 	while (1) {
-		ssize_t bytes_recv = recvfrom(sockfd, data, sizeof(gbnhdr), 0, NULL, NULL);
+		ssize_t bytes_recv = maybe_recvfrom(sockfd, data, sizeof(gbnhdr), 0, NULL, NULL);
 		if (bytes_recv == -1) {
 			perror("recvfrom failed");
 			free(data);
@@ -182,10 +208,19 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
 		if (data->type == FIN) {
 			free(data);
+			/* send finack */
+			gbnhdr *finack = make_pkt(FINACK, 0, NULL, 0);
+			ssize_t bytes_sent = sendto(sockfd, finack, sizeof(gbnhdr), flags, send_addr, send_addrlen);
+			if (bytes_sent == -1){
+				perror("sendto failed");
+				free(finack);
+				return -1;
+			}
+			free(finack);
 			return 0;
 		}
 		if (data->type != DATA) {
-			perror("DATA packet corrupted\n");
+			perror("Received packet is not DATA\n");
 			continue;
 		}
 
@@ -336,7 +371,7 @@ ssize_t maybe_recvfrom(int  s, char *buf, size_t len, int flags, struct sockaddr
 		int retval = recvfrom(s, buf, len, flags, from, fromlen);
 
 		/*----- Packet corrupted -----*/
-		if (rand() < 0.1*RAND_MAX){
+		if (rand() < 0.5*RAND_MAX){
 			printf("Maybe Recv: Packet corrupted\n");
 			/*----- Selecting a random byte inside the packet -----*/
 			int index = (int)((len-1)*rand()/(RAND_MAX + 1.0));
