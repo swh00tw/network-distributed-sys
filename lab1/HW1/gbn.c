@@ -97,13 +97,14 @@ uint16_t checksum(uint16_t *buf, int nwords)
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	
 	/* TODO: Your code here. */
-
 	/* Hint: Check the data length field 'len'.
 	 *       If it is > DATALEN, you will have to split the data
 	 *       up into multiple packets - you don't have to worry
 	 *       about getting more than N * DATALEN.
 	 */
 
+	base = 0;
+	nextseqnum = 0;
 	recv_sockfd = sockfd;
 	signal(SIGALRM, sigalrm_resend_packet_handler);
 
@@ -172,32 +173,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 
 		free(ack);
 		if (base == packets_num) {
-			break;
-		}
-	}
-
-	/* send FIN after finish */
-	signal(SIGALRM, sigalrm_resend_fin_handler);
-	while (1) {
-		gbnhdr *fin = make_pkt(FIN, 0, NULL, 0);
-		ssize_t bytes_sent = sendto(sockfd, fin, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
-		if (bytes_sent == -1){
-			perror("sendto failed");
-			free(fin);
-			return -1;
-		}
-
-		/* set timer */
-		alarm(TIMEOUT);
-
-		/* receive FINACK */
-		gbnhdr *finack = malloc(sizeof(gbnhdr));
-		memset(finack, 0, sizeof(gbnhdr));
-		ssize_t bytes_recv = recvfrom(sockfd, finack, sizeof(gbnhdr), 0, NULL, NULL);
-		if (bytes_recv == -1 || finack->type != FINACK || is_corrupted(finack)){
-			perror("FINACK packet corrupted\n");
-		} else {
-			printf("recv FINACK\n");
 			break;
 		}
 	}
@@ -278,9 +253,35 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 }
 
 int gbn_close(int sockfd){
-
 	/* TODO: Your code here. */
-	return close(sockfd);;
+	if (s.state == ESTABLISHED) {
+		signal(SIGALRM, sigalrm_resend_fin_handler);
+		while (1) {
+			gbnhdr *fin = make_pkt(FIN, 0, NULL, 0);
+			ssize_t bytes_sent = sendto(sockfd, fin, sizeof(gbnhdr), 0, recv_addr, recv_addrlen);
+			if (bytes_sent == -1){
+				perror("sendto failed");
+				free(fin);
+				return -1;
+			}
+
+			/* set timer */
+			alarm(TIMEOUT);
+
+			/* receive FINACK */
+			gbnhdr *finack = malloc(sizeof(gbnhdr));
+			memset(finack, 0, sizeof(gbnhdr));
+			ssize_t bytes_recv = recvfrom(sockfd, finack, sizeof(gbnhdr), 0, NULL, NULL);
+			if (bytes_recv == -1 || finack->type != FINACK || is_corrupted(finack)){
+				perror("FINACK packet corrupted\n");
+			} else {
+				printf("recv FINACK\n");
+				break;
+			}
+		}
+	}
+
+	return close(sockfd);
 }
 
 int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
@@ -314,9 +315,6 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 	recv_addr = (struct sockaddr *) server;
 	recv_addrlen = socklen;
 	s.state = ESTABLISHED;
-	base = 0;
-	nextseqnum = 0;
-
 	
 	return 0;
 }
@@ -324,6 +322,7 @@ int gbn_connect(int sockfd, const struct sockaddr *server, socklen_t socklen){
 int gbn_listen(int sockfd, int backlog){
 
 	/* TODO: Your code here. */
+	s.state = LISTENING;
 	return 0;
 }
 
