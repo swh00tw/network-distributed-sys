@@ -1,13 +1,18 @@
 #include "gbn.h"
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define MAX_SEQ 256
 
 state_t s = {CLOSED};
 
 /* sender global variables */
 struct sockaddr *recv_addr;
 socklen_t recv_addrlen;
-uint8_t base = 0;
-uint8_t nextseqnum = 0;
+uint16_t base = 0;
+uint16_t nextseqnum = 0;
+uint8_t cycle_num = 0;
+
 uint8_t window_size = 4;
+uint8_t max_window_size = 64;
 gbnhdr *pkts[N];
 int recv_sockfd;
 
@@ -15,6 +20,10 @@ int recv_sockfd;
 struct sockaddr *send_addr;
 socklen_t send_addrlen;
 uint8_t expectedseqnum = 0;
+
+uint8_t mod(uint8_t a, uint8_t b) {
+	return ((a % b) + b) % b;
+}
 
 gbnhdr* make_pkt(uint8_t type, uint8_t seqnum, const void *buf, size_t datalen) {
 	gbnhdr *pkt = malloc(sizeof(gbnhdr));
@@ -45,6 +54,8 @@ int check_seq_num(uint8_t expected_seqnum, gbnhdr *pkt) {
 }
 
 void sigalrm_resend_packet_handler(int signum) {
+	/* TODO: decrease window size */
+
 	alarm(TIMEOUT);
 	int i;
 	for (i = base; i < nextseqnum; i++) {
@@ -103,13 +114,15 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 		packets_num++;
 	}
 
+	/* TODO: max_window_size = min(max_window_size, packets_num); */
+
 	printf("Finish initialize %d packets.\nStart sending...\n", packets_num);
 	while (1) {
+		/* TODO: printf("current window size %d\n", window_size); */
 		/* send packets if available */
-		int cnt = 0;
 		while (nextseqnum < base + window_size && len > 0) {
 			size_t chunk_size = len > DATALEN ? DATALEN : len;
-			pkts[nextseqnum] = make_pkt(DATA, nextseqnum, buf, chunk_size);
+			pkts[nextseqnum] = make_pkt(DATA, mod(nextseqnum, MAX_SEQ), buf, chunk_size);
 			ssize_t bytes_sent = maybe_sendto(sockfd, pkts[nextseqnum], sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
 			if (bytes_sent == -1){
 				free(pkts[nextseqnum]);
@@ -122,7 +135,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 			}
 
 			nextseqnum++;
-			cnt++;
 			len -= chunk_size;
 			buf += chunk_size;
 		}
@@ -134,13 +146,25 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 		if (bytes_recv == -1 || ack->type != DATAACK || is_corrupted(ack)){
 			perror("DATAACK packet corrupted\n");
 		} 
-		else if (ack->seqnum < base) {
+		else if (mod((ack->seqnum - mod(base, MAX_SEQ)), MAX_SEQ) >= (nextseqnum - base)) {
 			printf("duplicated ack: %d\n", ack->seqnum);
 		}
 		else {
 			printf("recv ack seqnum: %d\n", ack->seqnum);
-			free(pkts[ack->seqnum]);
-			base = ack->seqnum + 1;
+			uint16_t prev_base = base;
+			if (mod(ack->seqnum + 1, MAX_SEQ) < mod(base, MAX_SEQ)) {
+				cycle_num++;
+			}
+
+			base = (uint16_t) cycle_num * MAX_SEQ + mod(ack->seqnum + 1, MAX_SEQ);
+
+			int i;
+			for (i = prev_base; i < base; i++){
+				free(pkts[i]);
+			}
+
+			/* TODO: update window size */
+			/* window_size = min(window_size*2, max_window_size); */
 
 			if (base == nextseqnum) {
 				alarm(0);
@@ -158,7 +182,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	/* send FIN after finish */
 	signal(SIGALRM, sigalrm_resend_fin_handler);
 	while (1) {
-		gbnhdr *fin = make_pkt(FIN, base, NULL, 0);
+		gbnhdr *fin = make_pkt(FIN, 0, NULL, 0);
 		ssize_t bytes_sent = sendto(sockfd, fin, sizeof(gbnhdr), flags, recv_addr, recv_addrlen);
 		if (bytes_sent == -1){
 			perror("sendto failed");
@@ -362,14 +386,14 @@ int gbn_accept(int sockfd, struct sockaddr *client, socklen_t *socklen){
 ssize_t maybe_recvfrom(int  s, char *buf, size_t len, int flags, struct sockaddr *from, socklen_t *fromlen){
 
 	/*----- Packet not lost -----*/
-	if (rand() > 0.1*RAND_MAX){
+	if (rand() > LOSS_PROB*RAND_MAX){
 
 
 		/*----- Receiving the packet -----*/
 		int retval = recvfrom(s, buf, len, flags, from, fromlen);
 
 		/*----- Packet corrupted -----*/
-		if (rand() < 0.1*RAND_MAX){
+		if (rand() < CORR_PROB*RAND_MAX){
 			printf("Maybe Recv: Packet corrupted\n");
 			/*----- Selecting a random byte inside the packet -----*/
 			int index = (int)((len-1)*rand()/(RAND_MAX + 1.0));
@@ -398,9 +422,9 @@ ssize_t maybe_sendto(int  s, const void *buf, size_t len, int flags, \
     
     
     /*----- Packet not lost -----*/
-    if (rand() > 0.1*RAND_MAX){
+    if (rand() > LOSS_PROB*RAND_MAX){
         /*----- Packet corrupted -----*/
-        if (rand() < 0.1*RAND_MAX){
+        if (rand() < CORR_PROB*RAND_MAX){
             printf("Maybe Send: Packet corrupted\n");
             /*----- Selecting a random byte inside the packet -----*/
             int index = (int)((len-1)*rand()/(RAND_MAX + 1.0));

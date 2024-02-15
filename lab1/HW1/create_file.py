@@ -9,7 +9,7 @@ def create_file(n):
                 line += f'packet{i:02d}'
 
             # erase last character
-            line = line[:-1]
+            line = line[:1023]
             line += '\n'
             file.write(line)
         file.write('END.')
