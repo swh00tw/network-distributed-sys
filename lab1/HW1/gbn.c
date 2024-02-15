@@ -83,7 +83,6 @@ uint16_t checksum(uint16_t *buf, int nwords)
 
 /* TODO
  1. congestion control
- 2. solve the NULL problem
 */
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	
@@ -251,9 +250,10 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 		free(ack);
 	}
 
+	ssize_t bytes_len = strlen(data->data);
 	free(data);
 
-	return len;
+	return bytes_len;
 }
 
 int gbn_close(int sockfd){
@@ -398,7 +398,7 @@ ssize_t maybe_sendto(int  s, const void *buf, size_t len, int flags, \
     
     
     /*----- Packet not lost -----*/
-    if (rand() > 0.5*RAND_MAX){
+    if (rand() > 0.1*RAND_MAX){
         /*----- Packet corrupted -----*/
         if (rand() < 0.1*RAND_MAX){
             printf("Maybe Send: Packet corrupted\n");
