@@ -67,7 +67,6 @@ void sigalrm_resend_packet_handler(int signum) {
 			free(pkts[i]);
 			exit(-1);
 		}
-		printf("resend data seqnum: %d\n", pkts[i]->seqnum);
 	}
 }
 
@@ -80,7 +79,6 @@ void sigalrm_resend_fin_handler(int signum) {
 		free(fin);
 		exit(-1);
 	}
-	printf("resend FIN\n");
 }
 
 uint16_t checksum(uint16_t *buf, int nwords)
@@ -125,7 +123,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 
 	max_window_size = min(max_window_size, packets_num);
 
-	printf("Finish initialize %d packets.\nStart sending...\n", packets_num);
 	while (1) {
 		/* send packets if available */
 		while (nextseqnum < base + window_size && len > 0) {
@@ -136,7 +133,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 				free(pkts[nextseqnum]);
 				return -1;
 			}
-			printf("send data seqnum: %d\n", pkts[nextseqnum]->seqnum);
 
 			if (base == nextseqnum) {
 				alarm(TIMEOUT);
@@ -154,11 +150,8 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 		if (bytes_recv == -1 || ack->type != DATAACK || is_corrupted(ack)){
 			perror("DATAACK packet corrupted\n");
 		} 
-		else if (mod((ack->seqnum - mod(base, MAX_SEQ)), MAX_SEQ) >= (nextseqnum - base)) {
-			printf("duplicated ack: %d\n", ack->seqnum);
-		}
-		else {
-			printf("recv ack seqnum: %d\n", ack->seqnum);
+		else if (mod((ack->seqnum - mod(base, MAX_SEQ)), MAX_SEQ) < (nextseqnum - base)) {
+			/* non duplicated ack */
 			uint16_t prev_base = base;
 			if (mod(ack->seqnum + 1, MAX_SEQ) < mod(base, MAX_SEQ)) {
 				cycle_num++;
@@ -229,7 +222,6 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 			should_deliver = 0;
 		}
 
-		printf("recv data seqnum: %d\n", data->seqnum);
 
 		gbnhdr *ack = make_pkt(DATAACK, ack_seqnum, NULL, 0);
 		ssize_t bytes_sent = maybe_sendto(sockfd, ack, sizeof(gbnhdr), flags, send_addr, send_addrlen);
@@ -242,7 +234,6 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 
 		if (should_deliver) {
 			/* write data to buf */
-			printf("deliver data seq: %d\n", data->seqnum);
 			memcpy(buf, data->data, len);
 			expectedseqnum++;
 			break;
@@ -279,7 +270,6 @@ int gbn_close(int sockfd){
 			if (bytes_recv == -1 || finack->type != FINACK || is_corrupted(finack)){
 				perror("FINACK packet corrupted\n");
 			} else {
-				printf("recv FINACK\n");
 				break;
 			}
 		}
@@ -394,7 +384,6 @@ ssize_t maybe_recvfrom(int  s, char *buf, size_t len, int flags, struct sockaddr
 
 		/*----- Packet corrupted -----*/
 		if (rand() < CORR_PROB*RAND_MAX){
-			printf("Maybe Recv: Packet corrupted\n");
 			/*----- Selecting a random byte inside the packet -----*/
 			int index = (int)((len-1)*rand()/(RAND_MAX + 1.0));
 
@@ -410,7 +399,6 @@ ssize_t maybe_recvfrom(int  s, char *buf, size_t len, int flags, struct sockaddr
 		return retval;
 	}
 	/*----- Packet lost -----*/
-	printf("Maybe Recv: Packet lost\n");
 	return(len);  /* Simulate a success */
 }
 
@@ -425,7 +413,6 @@ ssize_t maybe_sendto(int  s, const void *buf, size_t len, int flags, \
     if (rand() > LOSS_PROB*RAND_MAX){
         /*----- Packet corrupted -----*/
         if (rand() < CORR_PROB*RAND_MAX){
-            printf("Maybe Send: Packet corrupted\n");
             /*----- Selecting a random byte inside the packet -----*/
             int index = (int)((len-1)*rand()/(RAND_MAX + 1.0));
 
@@ -445,7 +432,6 @@ ssize_t maybe_sendto(int  s, const void *buf, size_t len, int flags, \
     }
     /*----- Packet lost -----*/
     else {
-			printf("Maybe Send: Packet lost\n");
       return(len);
 		}  /* Simulate a success */
 }
