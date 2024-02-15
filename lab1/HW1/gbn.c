@@ -82,10 +82,8 @@ uint16_t checksum(uint16_t *buf, int nwords)
 }
 
 /* TODO
- 1. go back N handle error
-		- receiver: change to maybe_recvfrom
- 2. congestion control
- 3. solve the NULL problem
+ 1. congestion control
+ 2. solve the NULL problem
 */
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	
@@ -235,7 +233,7 @@ ssize_t gbn_recv(int sockfd, void *buf, size_t len, int flags){
 		printf("recv data seqnum: %d\n", data->seqnum);
 
 		gbnhdr *ack = make_pkt(DATAACK, ack_seqnum, NULL, 0);
-		ssize_t bytes_sent = sendto(sockfd, ack, sizeof(gbnhdr), flags, send_addr, send_addrlen);
+		ssize_t bytes_sent = maybe_sendto(sockfd, ack, sizeof(gbnhdr), flags, send_addr, send_addrlen);
 		if (bytes_sent == -1){
 			perror("sendto failed");
 			free(data);
@@ -371,7 +369,7 @@ ssize_t maybe_recvfrom(int  s, char *buf, size_t len, int flags, struct sockaddr
 		int retval = recvfrom(s, buf, len, flags, from, fromlen);
 
 		/*----- Packet corrupted -----*/
-		if (rand() < 0.5*RAND_MAX){
+		if (rand() < 0.1*RAND_MAX){
 			printf("Maybe Recv: Packet corrupted\n");
 			/*----- Selecting a random byte inside the packet -----*/
 			int index = (int)((len-1)*rand()/(RAND_MAX + 1.0));
@@ -400,7 +398,7 @@ ssize_t maybe_sendto(int  s, const void *buf, size_t len, int flags, \
     
     
     /*----- Packet not lost -----*/
-    if (rand() > 0.1*RAND_MAX){
+    if (rand() > 0.5*RAND_MAX){
         /*----- Packet corrupted -----*/
         if (rand() < 0.1*RAND_MAX){
             printf("Maybe Send: Packet corrupted\n");
