@@ -11,8 +11,8 @@ uint16_t base = 0;
 uint16_t nextseqnum = 0;
 uint8_t cycle_num = 0;
 
-uint8_t window_size = 4;
-uint8_t max_window_size = 64;
+uint16_t window_size = 4;
+uint16_t max_window_size = 256;
 gbnhdr *pkts[N];
 int recv_sockfd;
 
@@ -54,7 +54,9 @@ int check_seq_num(uint8_t expected_seqnum, gbnhdr *pkt) {
 }
 
 void sigalrm_resend_packet_handler(int signum) {
-	/* TODO: decrease window size */
+	if (window_size > 1) {
+		window_size /= 2;
+	}
 
 	alarm(TIMEOUT);
 	int i;
@@ -92,9 +94,6 @@ uint16_t checksum(uint16_t *buf, int nwords)
 	return ~sum;
 }
 
-/* TODO
- 1. congestion control
-*/
 ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 	
 	/* TODO: Your code here. */
@@ -114,11 +113,10 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 		packets_num++;
 	}
 
-	/* TODO: max_window_size = min(max_window_size, packets_num); */
+	max_window_size = min(max_window_size, packets_num);
 
 	printf("Finish initialize %d packets.\nStart sending...\n", packets_num);
 	while (1) {
-		/* TODO: printf("current window size %d\n", window_size); */
 		/* send packets if available */
 		while (nextseqnum < base + window_size && len > 0) {
 			size_t chunk_size = len > DATALEN ? DATALEN : len;
@@ -163,8 +161,7 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 				free(pkts[i]);
 			}
 
-			/* TODO: update window size */
-			/* window_size = min(window_size*2, max_window_size); */
+			window_size = window_size*2 > max_window_size ? window_size : window_size*2;
 
 			if (base == nextseqnum) {
 				alarm(0);
