@@ -59,7 +59,7 @@ void sigalrm_resend_packet_handler(int signum) {
 	}
 
 	alarm(TIMEOUT);
-	int i;
+	int i;	
 	for (i = base; i < nextseqnum; i++) {
 		ssize_t bytes_sent = maybe_sendto(recv_sockfd, pkts[i], sizeof(gbnhdr), 0, recv_addr, recv_addrlen);
 		if (bytes_sent == -1){
@@ -105,8 +105,17 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 
 	base = 0;
 	nextseqnum = 0;
+	cycle_num = 0;
 	recv_sockfd = sockfd;
 	signal(SIGALRM, sigalrm_resend_packet_handler);
+
+	int i;
+	for (i = 0; i < N; i++) {
+		if (pkts[i] != NULL) {
+			free(pkts[i]);
+			pkts[i] = NULL;
+		}
+	}
 
 	/* calculate how many packets to be sent */
 	size_t packets_num = len / DATALEN;
@@ -156,11 +165,6 @@ ssize_t gbn_send(int sockfd, const void *buf, size_t len, int flags){
 			}
 
 			base = (uint16_t) cycle_num * MAX_SEQ + mod(ack->seqnum + 1, MAX_SEQ);
-
-			int i;
-			for (i = prev_base; i < base; i++){
-				free(pkts[i]);
-			}
 
 			window_size = window_size*2 > max_window_size ? window_size : window_size*2;
 
