@@ -70,4 +70,25 @@ int main(int argc, char *argv[]) {
 
   // Now you can use client_sockfd to communicate with the client
   cout << "Connection accepted" << endl;
+
+  // start a receive loop
+  char buffer[256];
+  while (true) {
+    memset(buffer, 0, sizeof(buffer));
+    int bytes_received = recv(client_sockfd, buffer, sizeof(buffer), 0);
+    if (bytes_received < 0) {
+      cerr << "Error: Could not receive data" << endl;
+      return 1;
+    }
+    if (bytes_received == 0) {
+      cout << "Connection closed by client" << endl;
+      break;
+    }
+    cout << "Received: " << buffer << endl;
+  }
+
+  // Close the client socket
+  close(sockfd);
+
+  return 0;
 }
