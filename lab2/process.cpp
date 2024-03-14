@@ -7,10 +7,83 @@
 
 using namespace std;
 
-int main(int argc, char *argv[]) {
-  // ./process id n port
-  cerr << "This is process." << endl;
+class Server {
+  public:
+    Server(int n, int id, int port) {
+      _create_socket(port);
+    }
 
+    void accept_connection() {
+      // Accept a new connection
+      _client_sockfd = accept(_sockfd, NULL, NULL);
+      if (_client_sockfd < 0) {
+        cerr << "Error: Could not accept connection" << endl;
+        exit(EXIT_FAILURE);
+      }
+      cout << "Accepted connection" << endl;
+    }
+
+    void receive_data() {
+      // start a receive loop
+      char buffer[256];
+      while (true) {
+        memset(buffer, 0, sizeof(buffer));
+        int bytes_received = recv(_client_sockfd, buffer, sizeof(buffer), 0);
+        if (bytes_received < 0) {
+          cerr << "Error: Could not receive data" << endl;
+          exit(EXIT_FAILURE);
+        }
+        if (bytes_received == 0) {
+          cout << "Connection closed by client" << endl;
+          break;
+        }
+        cout << "Received: " << buffer << endl;
+      }
+    }
+
+    void close_connection() {
+      close(_sockfd);
+    }
+
+  private:
+    int _sockfd;
+    int _client_sockfd;
+
+    int _create_socket(int port) {
+      _sockfd = socket(AF_INET, SOCK_STREAM, 0);
+      if (_sockfd < 0) {
+        cerr << "Error: Could not create socket" << endl;
+        exit(EXIT_FAILURE);
+      }
+
+      // Define the server address
+      struct sockaddr_in server_addr;
+      memset(&server_addr, 0, sizeof(server_addr));
+      server_addr.sin_family = AF_INET;
+      server_addr.sin_port = htons(port); // Port number
+
+      // Set the server address to 127.0.0.1
+      if (inet_pton(AF_INET, "127.0.0.1", &(server_addr.sin_addr)) <= 0) {
+        cerr << "Error: Could not set server address" << endl;
+        exit(EXIT_FAILURE);
+      }
+
+      // Bind the socket to the server address
+      if (bind(_sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        cerr << "Error: Could not bind socket to address" << endl;
+        exit(EXIT_FAILURE);
+      }
+
+      // Listen for connections
+      if (listen(_sockfd, 5) < 0) {
+        cerr << "Error: Could not listen on socket" << endl;
+        exit(EXIT_FAILURE);
+      }
+      return 0;
+    }
+};
+
+int main(int argc, char *argv[]) {
   // Check if the correct number of arguments is provided
   if (argc != 4) {
     cerr << "Usage: " << argv[0] << " id n port" << std::endl;
@@ -22,73 +95,14 @@ int main(int argc, char *argv[]) {
   int n = atoi(argv[2]);
   int port = atoi(argv[3]);
 
-  // Output parsed values
-  cout << "id: " << id << endl;
-  cout << "n: " << n << endl;
-  cout << "port: " << port << endl;
+  Server svr(n, id, port);
 
-  // Create a socket
-  int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-  if (sockfd < 0) {
-    cerr << "Error: Could not create socket" << endl;
-    return 1;
-  }
 
-  // Define the server address
-  struct sockaddr_in server_addr;
-  memset(&server_addr, 0, sizeof(server_addr));
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_port = htons(port); // Port number
-  // server_addr.sin_addr.s_addr = htonl(INADDR_ANY); // Any IP address for the server
+  svr.accept_connection();
 
-  // Set the server address to 127.0.0.1
-  if (inet_pton(AF_INET, "127.0.0.1", &(server_addr.sin_addr)) <= 0) {
-      cerr << "Error: Could not set server address" << endl;
-      return 1;
-  }
+  svr.receive_data();
 
-  // Bind the socket to the server address
-  if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-      cerr << "Error: Could not bind socket to address" << endl;
-      return 1;
-  }
-
-  // Listen for connections
-  if (listen(sockfd, 5) < 0) {
-      cerr << "Error: Could not listen on socket" << endl;
-      return 1;
-  }
-
-  // Accept a connection
-  struct sockaddr_in client_addr;
-  socklen_t client_len = sizeof(client_addr);
-  int client_sockfd = accept(sockfd, (struct sockaddr *)&client_addr, &client_len);
-  if (client_sockfd < 0) {
-      cerr << "Error: Could not accept connection" << endl;
-      return 1;
-  }
-
-  // Now you can use client_sockfd to communicate with the client
-  cout << "Connection accepted" << endl;
-
-  // start a receive loop
-  char buffer[256];
-  while (true) {
-    memset(buffer, 0, sizeof(buffer));
-    int bytes_received = recv(client_sockfd, buffer, sizeof(buffer), 0);
-    if (bytes_received < 0) {
-      cerr << "Error: Could not receive data" << endl;
-      return 1;
-    }
-    if (bytes_received == 0) {
-      cout << "Connection closed by client" << endl;
-      break;
-    }
-    cout << "Received: " << buffer << endl;
-  }
-
-  // Close the client socket
-  close(sockfd);
+  svr.close_connection();
 
   return 0;
 }
