@@ -91,7 +91,7 @@ def exit(exit=False):
         wait = wait_chat_log
 
     time.sleep(2)
-    for k in threads:
+    for k in list(threads.keys()):
         threads[k].close()
     subprocess.Popen(["./stopall"], stdout=open("/dev/null"), stderr=open("/dev/null"))
     sys.stdout.flush()
